@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AGV Controller</title>
+<style>
+body{margin:0;background:#000;color:#fff;font-family:Arial}
+.container{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;padding:20px}
+.panel{background:#111;border-radius:10px;padding:15px}
+img{width:100%;border-radius:6px}
+button{padding:12px;margin:6px;background:#222;color:#fff;border:none;border-radius:6px}
+button:hover{background:#333}
+.estop{background:#8b0000;width:100%;font-size:18px}
+.irbtn{background:#444;width:100%}
+#terminal{background:#000;color:#0f0;height:420px;overflow-y:auto;font-family:monospace;padding:10px}
+</style>
+</head>
+
+<body>
+
+<h2 style="text-align:center">AGV Gamepad Controller</h2>
+<div style="text-align:center">Mode: <span id="mode">MANUAL</span></div>
+
+<div class="container">
+
+<!-- LEFT -->
+<div class="panel">
+<h3>Front Camera</h3>
+<img src="/video_front">
+
+<h3>Side Camera (Bin)</h3>
+<img src="/video_side">
+
+<h3>Emergency</h3>
+<button class="estop" onclick="send('/estop')">EMERGENCY STOP</button>
+
+<h3>IR Simulation</h3>
+<button class="irbtn" onclick="send('/ir_sim')">
+SIMULATE IR MARKER
+</button>
+</div>
+
+<!-- CENTER -->
+<div class="panel">
+<h3>Mode</h3>
+<button onclick="setMode('MANUAL')">MANUAL</button>
+<button onclick="setMode('AUTO')">AUTO</button>
+
+<h3>Speed</h3>
+<input type="range" min="60" max="200" value="120" id="speed">
+<span id="speedVal">120</span>
+
+<h3>Command Log</h3>
+<div id="terminal"></div>
+</div>
+
+<!-- RIGHT -->
+<div class="panel" style="text-align:center">
+
+<h3>Movement</h3>
+<button onclick="send('/move/forward')">▲</button><br>
+<button onclick="send('/move/left')">◀</button>
+<button onclick="send('/move/stop')">■</button>
+<button onclick="send('/move/right')">▶</button><br>
+<button onclick="send('/move/reverse')">▼</button>
+
+<h3>Lift</h3>
+<button onclick="send('/lift/up')">▲</button><br>
+<button onclick="send('/lift/forward')">◀</button>
+<button onclick="send('/lift/stop')">■</button>
+<button onclick="send('/lift/backward')">▶</button><br>
+<button onclick="send('/lift/down')">▼</button>
+
+<h3>Garbage Type (Manual Test)</h3>
+<button onclick="send('/flipper/wet')">WET</button>
+<button onclick="send('/flipper/dry')">DRY</button><br>
+<button onclick="send('/flipper/neutral')">NEUTRAL</button>
+
+<h3>Gripper</h3>
+<button onclick="send('/gripper/open')">GRIP +</button>
+<button onclick="send('/gripper/close')">GRIP −</button>
+
+</div>
+</div>
+
+<script>
+function send(url){ fetch(url); }
+
+function setMode(m){
+    fetch('/mode/'+m);
+    document.getElementById("mode").innerText=m;
+}
+
+let slider=document.getElementById("speed");
+let label=document.getElementById("speedVal");
+
+slider.onchange=()=>fetch('/speed/'+slider.value);
+
+setInterval(()=>{
+    fetch('/speed_state').then(r=>r.text()).then(v=>{
+        slider.value=v;
+        label.innerText=v;
+    });
+    fetch('/logs').then(r=>r.text()).then(t=>{
+        let term=document.getElementById("terminal");
+        term.innerText=t;
+        term.scrollTop=term.scrollHeight;
+    });
+},500);
+</script>
+
+</body>
+</html>
