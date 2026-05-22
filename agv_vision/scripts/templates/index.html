@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AGV Controller</title>
+
+    <style>
+        body{
+            margin:0;
+            background:#0f172a;
+            color:white;
+            font-family:Arial;
+        }
+
+        .container{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            padding:20px;
+        }
+
+        h1{
+            margin-bottom:10px;
+        }
+
+        .section{
+            background:#1e293b;
+            padding:20px;
+            border-radius:12px;
+            margin:15px;
+            width:350px;
+            text-align:center;
+        }
+
+        button{
+            padding:12px 18px;
+            margin:5px;
+            border:none;
+            border-radius:8px;
+            background:#2563eb;
+            color:white;
+            font-size:14px;
+            cursor:pointer;
+        }
+
+        button:hover{
+            background:#3b82f6;
+        }
+
+        .danger{
+            background:#dc2626;
+        }
+
+        .danger:hover{
+            background:#ef4444;
+        }
+
+        .logs{
+            background:black;
+            height:150px;
+            overflow-y:auto;
+            font-size:12px;
+            padding:10px;
+            border-radius:8px;
+            text-align:left;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>AGV CONTROL PANEL</h1>
+
+    <div class="section">
+        <h3>Mode Control</h3>
+        <button onclick="setMode('AUTO')">AUTO</button>
+        <button onclick="setMode('MANUAL')">MANUAL</button>
+    </div>
+
+    <div class="section">
+        <h3>Manual Drive</h3>
+        <button onclick="sendCmd('FORWARD')">↑</button><br>
+        <button onclick="sendCmd('LEFT')">←</button>
+        <button class="danger" onclick="sendCmd('STOP')">STOP</button>
+        <button onclick="sendCmd('RIGHT')">→</button><br>
+        <button onclick="sendCmd('BACKWARD')">↓</button>
+    </div>
+
+    <div class="section">
+        <h3>Side Camera (Manual Mode)</h3>
+        <button onclick="sideCam('ON')">OPEN CAMERA</button>
+        <button onclick="sideCam('OFF')">CLOSE CAMERA</button>
+    </div>
+
+    <div class="section">
+        <h3>Bin Control (Auto Mode)</h3>
+        <button onclick="startBin()">START BIN SEQUENCE</button>
+    </div>
+
+    <div class="section">
+        <h3>System Logs</h3>
+        <div id="logs" class="logs"></div>
+    </div>
+
+</div>
+
+<script>
+
+function setMode(mode){
+    fetch("/set_mode/" + mode);
+}
+
+function sendCmd(cmd){
+    fetch("/manual/" + cmd);
+}
+
+function sideCam(action){
+    fetch("/side_camera/" + action);
+}
+
+function startBin(){
+    fetch("/start_bin_sequence");
+}
+
+function updateLogs(){
+    fetch("/logs")
+        .then(res => res.text())
+        .then(data => {
+            let logBox = document.getElementById("logs");
+            logBox.innerText = data;
+            logBox.scrollTop = logBox.scrollHeight;
+        });
+}
+
+setInterval(updateLogs, 2000);
+
+</script>
+
+</body>
+</html>
