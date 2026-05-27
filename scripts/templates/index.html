@@ -17,11 +17,13 @@
             background:#0f172a;
             color:white;
             font-family:Arial;
+            overflow-y:auto;
         }
 
         h1{
             text-align:center;
             padding-top:15px;
+            margin-bottom:10px;
         }
 
         .main-layout{
@@ -32,7 +34,7 @@
             box-sizing:border-box;
         }
 
-        /* LEFT PANEL */
+        /* LEFT SIDE */
 
         .left-panel{
             flex:1;
@@ -41,7 +43,7 @@
             gap:20px;
         }
 
-        /* RIGHT PANEL */
+        /* RIGHT SIDE */
 
         .right-panel{
             flex:1;
@@ -97,7 +99,7 @@
 
         .logs{
             background:black;
-            height:250px;
+            height:220px;
             overflow-y:auto;
             font-size:12px;
             padding:10px;
@@ -106,7 +108,7 @@
         }
 
         #map{
-            height:500px;
+            height:420px;
             width:100%;
             border-radius:10px;
             margin-top:10px;
@@ -123,9 +125,9 @@
         }
 
         .drive-controls button{
-            width:80px;
-            height:60px;
-            font-size:20px;
+            width:90px;
+            height:70px;
+            font-size:22px;
         }
 
     </style>
@@ -235,7 +237,7 @@
 
         </div>
 
-        <!-- CONTROL SWITCH -->
+        <!-- CONTROL SOURCE -->
 
         <div class="section">
 
@@ -257,37 +259,75 @@
 
         </div>
 
-        <!-- MANUAL DRIVE -->
+        <!-- DRIVE CONTROLS -->
 
         <div class="section drive-controls">
 
             <h3>Manual Drive</h3>
 
-            <button onclick="sendCmd('FORWARD')">
+            <!-- FORWARD -->
+
+            <button
+                onmousedown="sendCmd('FORWARD')"
+                onmouseup="sendCmd('STOP')"
+                onmouseleave="sendCmd('STOP')"
+                ontouchstart="sendCmd('FORWARD')"
+                ontouchend="sendCmd('STOP')">
+
                 ↑
+
             </button>
 
             <br>
 
-            <button onclick="sendCmd('LEFT')">
+            <!-- LEFT -->
+
+            <button
+                onmousedown="sendCmd('LEFT')"
+                onmouseup="sendCmd('STOP')"
+                onmouseleave="sendCmd('STOP')"
+                ontouchstart="sendCmd('LEFT')"
+                ontouchend="sendCmd('STOP')">
+
                 ←
+
             </button>
 
+            <!-- STOP -->
+
             <button class="danger"
-            onclick="sendCmd('STOP')">
+                onclick="sendCmd('STOP')">
 
                 ■
 
             </button>
 
-            <button onclick="sendCmd('RIGHT')">
+            <!-- RIGHT -->
+
+            <button
+                onmousedown="sendCmd('RIGHT')"
+                onmouseup="sendCmd('STOP')"
+                onmouseleave="sendCmd('STOP')"
+                ontouchstart="sendCmd('RIGHT')"
+                ontouchend="sendCmd('STOP')">
+
                 →
+
             </button>
 
             <br>
 
-            <button onclick="sendCmd('BACKWARD')">
+            <!-- BACKWARD -->
+
+            <button
+                onmousedown="sendCmd('BACKWARD')"
+                onmouseup="sendCmd('STOP')"
+                onmouseleave="sendCmd('STOP')"
+                ontouchstart="sendCmd('BACKWARD')"
+                ontouchend="sendCmd('STOP')">
+
                 ↓
+
             </button>
 
         </div>
