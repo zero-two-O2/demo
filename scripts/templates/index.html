@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>AGV Controller</title>
+
+    <link rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+
+        body{
+            margin:0;
+            background:#0f172a;
+            color:white;
+            font-family:Arial;
+        }
+
+        h1{
+            text-align:center;
+            padding-top:15px;
+        }
+
+        .main-layout{
+            display:flex;
+            height:calc(100vh - 80px);
+            gap:20px;
+            padding:20px;
+            box-sizing:border-box;
+        }
+
+        /* LEFT PANEL */
+
+        .left-panel{
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            gap:20px;
+        }
+
+        /* RIGHT PANEL */
+
+        .right-panel{
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            gap:20px;
+        }
+
+        .section{
+            background:#1e293b;
+            padding:20px;
+            border-radius:12px;
+        }
+
+        button{
+            padding:12px 18px;
+            margin:5px;
+            border:none;
+            border-radius:8px;
+            background:#2563eb;
+            color:white;
+            font-size:14px;
+            cursor:pointer;
+        }
+
+        button:hover{
+            background:#3b82f6;
+        }
+
+        .danger{
+            background:#dc2626;
+        }
+
+        .danger:hover{
+            background:#ef4444;
+        }
+
+        .green{
+            background:#16a34a;
+        }
+
+        .green:hover{
+            background:#22c55e;
+        }
+
+        .status-box{
+            background:#111827;
+            padding:12px;
+            border-radius:8px;
+            line-height:2;
+            font-size:14px;
+        }
+
+        .logs{
+            background:black;
+            height:250px;
+            overflow-y:auto;
+            font-size:12px;
+            padding:10px;
+            border-radius:8px;
+            text-align:left;
+        }
+
+        #map{
+            height:500px;
+            width:100%;
+            border-radius:10px;
+            margin-top:10px;
+        }
+
+        .gps-data{
+            margin-top:15px;
+            font-size:14px;
+            line-height:1.8;
+        }
+
+        .drive-controls{
+            text-align:center;
+        }
+
+        .drive-controls button{
+            width:80px;
+            height:60px;
+            font-size:20px;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<h1>AGV CONTROL PANEL</h1>
+
+<div class="main-layout">
+
+    <!-- LEFT SIDE -->
+
+    <div class="left-panel">
+
+        <!-- GPS -->
+
+        <div class="section">
+
+            <h3>Live GPS Tracking</h3>
+
+            <div id="map"></div>
+
+            <div class="gps-data">
+
+                <div>
+                    Latitude:
+                    <span id="lat">0</span>
+                </div>
+
+                <div>
+                    Longitude:
+                    <span id="lon">0</span>
+                </div>
+
+                <div>
+                    Speed:
+                    <span id="speed">0</span>
+                </div>
+
+                <div>
+                    Heading:
+                    <span id="heading">0</span>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- CONTROLLER STATUS -->
+
+        <div class="section">
+
+            <h3>Controller Status</h3>
+
+            <div class="status-box">
+
+                <div>
+                    Gamepad Connected:
+                    <span id="controllerConnected">
+                        NO
+                    </span>
+                </div>
+
+                <div>
+                    Active Control:
+                    <span id="activeControl">
+                        WEB
+                    </span>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- LOGS -->
+
+        <div class="section">
+
+            <h3>System Logs</h3>
+
+            <div id="logs" class="logs"></div>
+
+        </div>
+
+    </div>
+
+
+    <!-- RIGHT SIDE -->
+
+    <div class="right-panel">
+
+        <!-- MODE CONTROL -->
+
+        <div class="section">
+
+            <h3>Mode Control</h3>
+
+            <button onclick="setMode('AUTO')">
+                AUTO
+            </button>
+
+            <button onclick="setMode('MANUAL')">
+                MANUAL
+            </button>
+
+        </div>
+
+        <!-- CONTROL SWITCH -->
+
+        <div class="section">
+
+            <h3>Control Source</h3>
+
+            <button class="green"
+            onclick="enableGamepad()">
+
+                GAMEPAD
+
+            </button>
+
+            <button
+            onclick="enableWebControl()">
+
+                WEB
+
+            </button>
+
+        </div>
+
+        <!-- MANUAL DRIVE -->
+
+        <div class="section drive-controls">
+
+            <h3>Manual Drive</h3>
+
+            <button onclick="sendCmd('FORWARD')">
+                ↑
+            </button>
+
+            <br>
+
+            <button onclick="sendCmd('LEFT')">
+                ←
+            </button>
+
+            <button class="danger"
+            onclick="sendCmd('STOP')">
+
+                ■
+
+            </button>
+
+            <button onclick="sendCmd('RIGHT')">
+                →
+            </button>
+
+            <br>
+
+            <button onclick="sendCmd('BACKWARD')">
+                ↓
+            </button>
+
+        </div>
+
+        <!-- SIDE CAMERA -->
+
+        <div class="section">
+
+            <h3>Side Camera</h3>
+
+            <button onclick="sideCam('ON')">
+                OPEN
+            </button>
+
+            <button onclick="sideCam('OFF')">
+                CLOSE
+            </button>
+
+        </div>
+
+        <!-- BIN CONTROL -->
+
+        <div class="section">
+
+            <h3>Bin Sequence</h3>
+
+            <button onclick="startBin()">
+                START
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+
+// ============================
+// MODE CONTROL
+// ============================
+
+function setMode(mode){
+
+    fetch("/set_mode/" + mode);
+}
+
+
+// ============================
+// MANUAL COMMANDS
+// ============================
+
+function sendCmd(cmd){
+
+    fetch("/manual/" + cmd);
+}
+
+
+// ============================
+// SIDE CAMERA
+// ============================
+
+function sideCam(action){
+
+    fetch("/side_camera/" + action);
+}
+
+
+// ============================
+// BIN SEQUENCE
+// ============================
+
+function startBin(){
+
+    fetch("/start_bin_sequence");
+}
+
+
+// ============================
+// CONTROL SWITCHING
+// ============================
+
+function enableGamepad(){
+
+    fetch("/enable_gamepad");
+}
+
+
+function enableWebControl(){
+
+    fetch("/enable_web");
+}
+
+
+// ============================
+// LOGS
+// ============================
+
+function updateLogs(){
+
+    fetch("/logs")
+
+        .then(res => res.text())
+
+        .then(data => {
+
+            let logBox =
+            document.getElementById("logs");
+
+            logBox.innerText = data;
+
+            logBox.scrollTop =
+            logBox.scrollHeight;
+        });
+}
+
+setInterval(updateLogs, 2000);
+
+
+// ============================
+// CONTROLLER STATUS
+// ============================
+
+function updateControllerStatus(){
+
+    fetch("/controller_status")
+
+        .then(res => res.json())
+
+        .then(data => {
+
+            document.getElementById(
+                "controllerConnected"
+            ).innerText = data.connected
+            ? "YES"
+            : "NO";
+
+            document.getElementById(
+                "activeControl"
+            ).innerText = data.enabled
+            ? "GAMEPAD"
+            : "WEB";
+
+        });
+}
+
+setInterval(updateControllerStatus, 1000);
+
+
+// ============================
+// LEAFLET MAP
+// ============================
+
+var map = L.map('map')
+.setView([19.6131, 74.1859], 16);
+
+L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+        maxZoom: 19
+    }
+).addTo(map);
+
+var marker =
+L.marker([19.6131, 74.1859])
+.addTo(map);
+
+var pathCoordinates = [];
+
+var polyline = L.polyline(
+    pathCoordinates,
+    {
+        color: 'red'
+    }
+).addTo(map);
+
+
+// ============================
+// GPS UPDATE
+// ============================
+
+function updateGPS(){
+
+    fetch("/gps")
+
+        .then(res => res.json())
+
+        .then(data => {
+
+            let lat = data.latitude;
+            let lon = data.longitude;
+            let speed = data.speed;
+            let heading = data.heading;
+
+            document.getElementById("lat")
+            .innerText = lat;
+
+            document.getElementById("lon")
+            .innerText = lon;
+
+            document.getElementById("speed")
+            .innerText = speed;
+
+            document.getElementById("heading")
+            .innerText = heading;
+
+            marker.setLatLng([lat, lon]);
+
+            map.setView([lat, lon]);
+
+            pathCoordinates.push([lat, lon]);
+
+            polyline.setLatLngs(pathCoordinates);
+
+        })
+
+        .catch(err => {
+
+            console.log("GPS Error:", err);
+
+        });
+}
+
+setInterval(updateGPS, 1000);
+
+</script>
+
+</body>
+
+</html>
