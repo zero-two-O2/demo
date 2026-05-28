@@ -24,7 +24,7 @@ MODE_FILE = "/home/zerotwo/agv_vision/mode.txt"
 
 current_speed = 120
 
-command_log = deque(maxlen=20)
+command_log = deque(maxlen=50)
 
 auto_state = "DRIVING"
 
@@ -35,11 +35,21 @@ use_side_camera = False
 
 # ================= CONTROL ================= #
 
-manual_speed = 0
-manual_turn = 0
-
 controller_connected = False
 controller_enabled = False
+
+
+# ================= COMMAND STATES ================= #
+
+last_drive_command = ""
+
+last_horizontal_command = ""
+
+last_vertical_command = ""
+
+last_gripper_command = ""
+
+last_flipper_command = ""
 
 
 # ================= GPS ================= #
@@ -58,9 +68,19 @@ def log_cmd(msg):
 
     ts = time.strftime("%H:%M:%S")
 
-    command_log.append(f"[{ts}] {msg}")
+    entry = f"[{ts}] {msg}"
 
-    print(msg)
+    # Avoid duplicate spam
+
+    if len(command_log) > 0:
+
+        if command_log[-1] == entry:
+
+            return
+
+    command_log.append(entry)
+
+    print(entry)
 
 
 # ================= MODE ================= #
@@ -81,16 +101,11 @@ def set_mode(m):
     global auto_state
     global bin_request
     global use_side_camera
-    global manual_speed
-    global manual_turn
     global controller_enabled
 
     open(MODE_FILE, "w").write(m)
 
-    manual_speed = 0
-    manual_turn = 0
-
-    controller_enabled = False
+    controller_enabled = (m == "MANUAL")
 
     auto_state = "DRIVING"
 
@@ -108,6 +123,7 @@ def set_mode(m):
 def gps_receiver():
 
     PHONE_IP = "10.67.217.4"
+
     PORT = 5005
 
     sock = socket.socket(
@@ -288,45 +304,39 @@ def change_mode(mode):
 @app.route("/manual/<cmd>")
 def manual_cmd(cmd):
 
-    global manual_speed
-    global manual_turn
-
     if read_mode() != "MANUAL":
 
         return "NOT MANUAL MODE"
 
-    if controller_enabled:
-
-        return "GAMEPAD ACTIVE"
-
     if cmd == "FORWARD":
 
-        manual_speed = 120
-        manual_turn = 0
+        motor.forward()
+
+        log_cmd("WEB → FORWARD")
 
     elif cmd == "BACKWARD":
 
-        manual_speed = -120
-        manual_turn = 0
+        motor.backward()
+
+        log_cmd("WEB → BACKWARD")
 
     elif cmd == "LEFT":
 
-        manual_speed = 80
-        manual_turn = -100
+        motor.left()
+
+        log_cmd("WEB → LEFT")
 
     elif cmd == "RIGHT":
 
-        manual_speed = 80
-        manual_turn = 100
+        motor.right()
+
+        log_cmd("WEB → RIGHT")
 
     elif cmd == "STOP":
 
-        manual_speed = 0
-        manual_turn = 0
-
         motor.stop()
 
-    log_cmd(f"WEB CONTROL → {cmd}")
+        log_cmd("WEB → STOP")
 
     return "OK"
 
@@ -340,9 +350,7 @@ def enable_gamepad():
 
     controller_enabled = True
 
-    motor.stop()
-
-    log_cmd("GAMEPAD CONTROL ENABLED")
+    log_cmd("GAMEPAD ENABLED")
 
     return "OK"
 
@@ -351,13 +359,8 @@ def enable_gamepad():
 def enable_web():
 
     global controller_enabled
-    global manual_speed
-    global manual_turn
 
     controller_enabled = False
-
-    manual_speed = 0
-    manual_turn = 0
 
     motor.stop()
 
@@ -382,21 +385,19 @@ def side_camera_control(action):
 
     global use_side_camera
 
-    if read_mode() == "MANUAL":
+    if action == "ON":
 
-        if action == "ON":
+        use_side_camera = True
 
-            use_side_camera = True
+        log_cmd("SIDE CAMERA → ON")
 
-            log_cmd("SIDE CAMERA DISPLAY ON")
+    elif action == "OFF":
 
-        elif action == "OFF":
+        use_side_camera = False
 
-            use_side_camera = False
+        cv2.destroyWindow("AGV SIDE CAMERA")
 
-            cv2.destroyWindow("AGV SIDE CAMERA")
-
-            log_cmd("SIDE CAMERA DISPLAY OFF")
+        log_cmd("SIDE CAMERA → OFF")
 
     return "OK"
 
@@ -412,7 +413,7 @@ def start_bin_sequence():
 
         bin_request = True
 
-        log_cmd("BIN SEQUENCE REQUESTED FROM WEB")
+        log_cmd("BIN SEQUENCE STARTED")
 
     return "OK"
 
@@ -437,8 +438,6 @@ def logs():
 
 def gamepad_loop():
 
-    global manual_speed
-    global manual_turn
     global controller_enabled
 
     global last_drive_command
@@ -453,11 +452,7 @@ def gamepad_loop():
 
         try:
 
-            if not pygame.joystick.get_init():
-
-                pygame.joystick.init()
-
-            if pygame.joystick.get_count() == 0:
+            if not controller_connected:
 
                 time.sleep(1)
 
@@ -465,9 +460,10 @@ def gamepad_loop():
 
             pygame.event.pump()
 
-            # ================= DRIVE =================
+            # ================= LEFT STICK =================
 
             left_y = joystick.get_axis(1)
+
             left_x = joystick.get_axis(0)
 
             if abs(left_y) < DEADZONE:
@@ -476,9 +472,12 @@ def gamepad_loop():
             if abs(left_x) < DEADZONE:
                 left_x = 0
 
-            # ================= ARM =================
+            # ================= RIGHT STICK =================
+
+            # These may need adjustment after jstest
 
             right_x = joystick.get_axis(2)
+
             right_y = joystick.get_axis(3)
 
             if abs(right_x) < DEADZONE:
@@ -490,8 +489,11 @@ def gamepad_loop():
             # ================= BUTTONS =================
 
             A_BUTTON = joystick.get_button(0)
+
             B_BUTTON = joystick.get_button(1)
+
             X_BUTTON = joystick.get_button(2)
+
             Y_BUTTON = joystick.get_button(3)
 
             # ================= D PAD =================
@@ -500,11 +502,11 @@ def gamepad_loop():
 
             dpad_x = hat[0]
 
-            # ================= RT =================
+            # ================= RT TRIGGER =================
 
             rt_trigger = joystick.get_axis(5)
 
-            # ================= MODE =================
+            # ================= MODE CONTROL =================
 
             if X_BUTTON:
 
@@ -512,7 +514,7 @@ def gamepad_loop():
 
                 controller_enabled = True
 
-                log_cmd("MODE → MANUAL")
+                log_cmd("CONTROLLER → MANUAL MODE")
 
                 time.sleep(0.3)
 
@@ -522,7 +524,7 @@ def gamepad_loop():
 
                 controller_enabled = False
 
-                log_cmd("MODE → AUTO")
+                log_cmd("CONTROLLER → AUTO MODE")
 
                 time.sleep(0.3)
 
@@ -536,13 +538,13 @@ def gamepad_loop():
 
                     log_cmd("EMERGENCY STOP")
 
-                last_drive_command = "STOP"
+                    last_drive_command = "STOP"
 
                 time.sleep(0.1)
 
                 continue
 
-            # ================= DRIVE CONTROL =================
+            # ================= DRIVE =================
 
             if (
                 read_mode() == "MANUAL"
@@ -607,7 +609,9 @@ def gamepad_loop():
 
                     motor.horizontal_forward()
 
-                    log_cmd("ARM → HORIZONTAL FORWARD")
+                    log_cmd(
+                        "ARM → HORIZONTAL FORWARD"
+                    )
 
                     last_horizontal_command = "HF"
 
@@ -617,7 +621,9 @@ def gamepad_loop():
 
                     motor.horizontal_reverse()
 
-                    log_cmd("ARM → HORIZONTAL REVERSE")
+                    log_cmd(
+                        "ARM → HORIZONTAL REVERSE"
+                    )
 
                     last_horizontal_command = "HR"
 
@@ -710,6 +716,8 @@ def gamepad_loop():
             print("GAMEPAD ERROR:", e)
 
             time.sleep(1)
+
+
 # ================= CLEANUP ================= #
 
 def cleanup(sig=None, frame=None):
@@ -719,9 +727,11 @@ def cleanup(sig=None, frame=None):
     motor.stop()
 
     picam_front.stop()
+
     picam_front.close()
 
     picam_side.stop()
+
     picam_side.close()
 
     cv2.destroyAllWindows()
@@ -824,15 +834,6 @@ def vision_loop():
                     log_cmd(
                         "BIN SEQUENCE COMPLETE"
                     )
-
-        # ================= MANUAL MODE ================= #
-
-        elif read_mode() == "MANUAL":
-
-            motor.drive(
-                manual_speed,
-                manual_turn
-            )
 
         # ================= DISPLAY ================= #
 
