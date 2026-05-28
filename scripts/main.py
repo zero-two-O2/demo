@@ -23,10 +23,13 @@ from bin_detection import detect_bin
 MODE_FILE = "/home/zerotwo/agv_vision/mode.txt"
 
 current_speed = 120
+
 command_log = deque(maxlen=20)
 
 auto_state = "DRIVING"
+
 bin_request = False
+
 use_side_camera = False
 
 
@@ -47,6 +50,57 @@ gps_data = {
     "speed": 0,
     "heading": 0
 }
+
+
+# ================= LOGGING ================= #
+
+def log_cmd(msg):
+
+    ts = time.strftime("%H:%M:%S")
+
+    command_log.append(f"[{ts}] {msg}")
+
+    print(msg)
+
+
+# ================= MODE ================= #
+
+def read_mode():
+
+    try:
+
+        return open(MODE_FILE).read().strip()
+
+    except:
+
+        return "MANUAL"
+
+
+def set_mode(m):
+
+    global auto_state
+    global bin_request
+    global use_side_camera
+    global manual_speed
+    global manual_turn
+    global controller_enabled
+
+    open(MODE_FILE, "w").write(m)
+
+    manual_speed = 0
+    manual_turn = 0
+
+    controller_enabled = False
+
+    auto_state = "DRIVING"
+
+    bin_request = False
+
+    use_side_camera = False
+
+    motor.stop()
+
+    log_cmd(f"MODE → {m}")
 
 
 # ================= GPS RECEIVER ================= #
@@ -91,15 +145,12 @@ def gps_receiver():
                     gps = json.loads(packet)
 
                     gps_data["latitude"] = gps["latitude"]
-                    gps_data["longitude"] = gps["longitude"]
-                    gps_data["speed"] = gps["speed"]
-                    gps_data["heading"] = gps["heading"]
 
-                    print(
-                        f"GPS → "
-                        f"{gps_data['latitude']}, "
-                        f"{gps_data['longitude']}"
-                    )
+                    gps_data["longitude"] = gps["longitude"]
+
+                    gps_data["speed"] = gps["speed"]
+
+                    gps_data["heading"] = gps["heading"]
 
                 except Exception as e:
 
@@ -114,57 +165,6 @@ def gps_receiver():
             time.sleep(1)
 
 
-# ================= LOGGING ================= #
-
-def log_cmd(msg):
-
-    ts = time.strftime("%H:%M:%S")
-
-    command_log.append(f"[{ts}] {msg}")
-
-    print(msg)
-
-
-# ================= MODE ================= #
-
-def read_mode():
-
-    try:
-
-        return open(MODE_FILE).read().strip()
-
-    except:
-
-        return "MANUAL"
-
-
-def set_mode(m):
-
-    global auto_state
-    global bin_request
-    global use_side_camera
-    global manual_speed
-    global manual_turn
-    global controller_enabled
-
-    open(MODE_FILE, "w").write(m)
-
-    motor.stop()
-
-    manual_speed = 0
-    manual_turn = 0
-
-    controller_enabled = False
-
-    auto_state = "DRIVING"
-
-    bin_request = False
-
-    use_side_camera = False
-
-    log_cmd(f"MODE → {m}")
-
-
 # ================= ARDUINO ================= #
 
 motor.connect()
@@ -177,6 +177,7 @@ if not motor.arduino_connected:
 # ================= GAMEPAD ================= #
 
 pygame.init()
+
 pygame.joystick.init()
 
 if pygame.joystick.get_count() > 0:
@@ -202,13 +203,18 @@ else:
 picam_front = Picamera2(0)
 
 picam_front.configure(
+
     picam_front.create_video_configuration(
+
         main={
             "format": "RGB888",
             "size": (640, 480)
         },
+
         transform=Transform(vflip=True)
+
     )
+
 )
 
 picam_front.start()
@@ -230,12 +236,16 @@ cv2.resizeWindow(
 picam_side = Picamera2(1)
 
 picam_side.configure(
+
     picam_side.create_video_configuration(
+
         main={
             "format": "RGB888",
             "size": (640, 480)
         }
+
     )
+
 )
 
 picam_side.start()
@@ -285,7 +295,6 @@ def manual_cmd(cmd):
 
         return "NOT MANUAL MODE"
 
-    # Ignore web control if gamepad active
     if controller_enabled:
 
         return "GAMEPAD ACTIVE"
@@ -322,7 +331,7 @@ def manual_cmd(cmd):
     return "OK"
 
 
-# ================= CONTROLLER SWITCH ================= #
+# ================= CONTROL SOURCE ================= #
 
 @app.route("/enable_gamepad")
 def enable_gamepad():
@@ -438,12 +447,6 @@ def gamepad_loop():
 
         try:
 
-            if read_mode() != "MANUAL":
-
-                time.sleep(0.1)
-
-                continue
-
             if not controller_connected:
 
                 time.sleep(1)
@@ -452,59 +455,172 @@ def gamepad_loop():
 
             pygame.event.pump()
 
-            # LEFT STICK
+            # =========================
+            # LEFT STICK - DRIVE
+            # =========================
 
-            y_axis = joystick.get_axis(1)
-            x_axis = joystick.get_axis(0)
+            left_y = joystick.get_axis(1)
 
-            # DEADZONE
+            left_x = joystick.get_axis(0)
 
-            if abs(y_axis) < DEADZONE:
+            if abs(left_y) < DEADZONE:
+                left_y = 0
 
-                y_axis = 0
+            if abs(left_x) < DEADZONE:
+                left_x = 0
 
-            if abs(x_axis) < DEADZONE:
+            # =========================
+            # RIGHT STICK - ARM
+            # =========================
 
-                x_axis = 0
+            right_x = joystick.get_axis(2)
 
-            # ENABLE GAMEPAD - A BUTTON
+            right_y = joystick.get_axis(3)
 
-            if joystick.get_button(0):
+            if abs(right_x) < DEADZONE:
+                right_x = 0
 
-                if not controller_enabled:
+            if abs(right_y) < DEADZONE:
+                right_y = 0
 
-                    controller_enabled = True
+            # =========================
+            # BUTTONS
+            # =========================
 
-                    motor.stop()
+            A_BUTTON = joystick.get_button(0)
 
-                    log_cmd("GAMEPAD CONTROL ENABLED")
+            B_BUTTON = joystick.get_button(1)
+
+            X_BUTTON = joystick.get_button(2)
+
+            Y_BUTTON = joystick.get_button(3)
+
+            # =========================
+            # D PAD
+            # =========================
+
+            hat = joystick.get_hat(0)
+
+            dpad_x = hat[0]
+
+            dpad_y = hat[1]
+
+            # =========================
+            # RT TRIGGER
+            # =========================
+
+            rt_trigger = joystick.get_axis(5)
+
+            # =========================
+            # MODE SELECT
+            # =========================
+
+            if X_BUTTON:
+
+                set_mode("MANUAL")
+
+                controller_enabled = True
+
+                log_cmd("MANUAL MODE")
 
                 time.sleep(0.3)
 
-            # ENABLE WEB - B BUTTON
+            if Y_BUTTON:
 
-            if joystick.get_button(1):
+                set_mode("AUTO")
 
-                if controller_enabled:
+                controller_enabled = False
 
-                    controller_enabled = False
-
-                    manual_speed = 0
-                    manual_turn = 0
-
-                    motor.stop()
-
-                    log_cmd("WEB CONTROL ENABLED")
+                log_cmd("AUTO MODE")
 
                 time.sleep(0.3)
 
-            # ONLY CONTROL IF ENABLED
+            # =========================
+            # EMERGENCY STOP
+            # =========================
 
-            if controller_enabled:
+            if rt_trigger > 0.8:
 
-                manual_speed = int(-y_axis * 120)
+                manual_speed = 0
 
-                manual_turn = int(x_axis * 100)
+                manual_turn = 0
+
+                motor.stop()
+
+                log_cmd("EMERGENCY STOP")
+
+                time.sleep(0.2)
+
+                continue
+
+            # =========================
+            # DRIVE CONTROL
+            # =========================
+
+            if (
+                read_mode() == "MANUAL"
+                and controller_enabled
+            ):
+
+                manual_speed = int(-left_y * 120)
+
+                manual_turn = int(left_x * 100)
+
+            # =========================
+            # HORIZONTAL ARM
+            # =========================
+
+            if right_x > 0.5:
+
+                motor.horizontal_forward()
+
+            elif right_x < -0.5:
+
+                motor.horizontal_reverse()
+
+            else:
+
+                motor.horizontal_stop()
+
+            # =========================
+            # VERTICAL ARM
+            # =========================
+
+            if right_y < -0.5:
+
+                motor.vertical_up()
+
+            elif right_y > 0.5:
+
+                motor.vertical_down()
+
+            else:
+
+                motor.vertical_stop()
+
+            # =========================
+            # GRIPPER
+            # =========================
+
+            if dpad_x == -1:
+
+                motor.gripper_open()
+
+            elif dpad_x == 1:
+
+                motor.gripper_close()
+
+            # =========================
+            # FLIPPER
+            # =========================
+
+            if A_BUTTON:
+
+                motor.flipper_left()
+
+            if B_BUTTON:
+
+                motor.flipper_right()
 
             time.sleep(0.02)
 
@@ -537,6 +653,7 @@ def cleanup(sig=None, frame=None):
 
 
 signal.signal(signal.SIGINT, cleanup)
+
 signal.signal(signal.SIGTERM, cleanup)
 
 
@@ -595,7 +712,7 @@ def vision_loop():
 
                     else:
 
-                        motor.forward(current_speed)
+                        motor.forward()
 
             elif auto_state == "BIN_SEQUENCE":
 
@@ -607,13 +724,17 @@ def vision_loop():
                         f"BIN DETECTED → {bin_color}"
                     )
 
-                    motor.send(f"FLIP_{bin_color}")
+                    if bin_color == "RED":
+
+                        motor.flipper_left()
+
+                    elif bin_color == "BLUE":
+
+                        motor.flipper_right()
 
                     time.sleep(2)
 
-                    motor.send("FLIP_NEUTRAL")
-
-                    time.sleep(1)
+                    motor.stop()
 
                     use_side_camera = False
 
