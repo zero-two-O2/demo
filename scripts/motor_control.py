@@ -50,7 +50,7 @@ def send(cmd):
 
         try:
 
-            ser.write((cmd + "\n").encode())
+            ser.write(cmd.encode())
 
         except Exception:
 
@@ -65,56 +65,101 @@ def send(cmd):
         print(f"[SIM MODE] {cmd}")
 
 
-# ================= BASIC MOVEMENT ================= #
+# ================= DRIVE ================= #
 
 def forward(speed=120):
 
-    speed = max(0, min(255, int(speed)))
-
-    send(f"F:{speed}")
+    send("F")
 
 
 def backward(speed=120):
 
-    speed = max(0, min(255, int(speed)))
-
-    send(f"B:{speed}")
+    send("B")
 
 
 def left():
 
-    send("LEFT")
+    send("L")
 
 
 def right():
 
-    send("RIGHT")
+    send("R")
 
 
 def stop():
 
-    send("STOP")
+    send("S")
 
 
-def slow():
+# ================= AUTO LIFT ================= #
 
-    send("SLOW")
+def auto_lift():
+
+    send("D")
 
 
-# ================= ADVANCED CONTROL ================= #
+# ================= HORIZONTAL ARM ================= #
+
+def horizontal_forward():
+
+    send("H")
+
+
+def horizontal_reverse():
+
+    send("J")
+
+
+def horizontal_stop():
+
+    send("K")
+
+
+# ================= VERTICAL ARM ================= #
+
+def vertical_up():
+
+    send("U")
+
+
+def vertical_down():
+
+    send("N")
+
+
+def vertical_stop():
+
+    send("M")
+
+
+# ================= GRIPPER ================= #
+
+def gripper_open():
+
+    send("C")
+
+
+def gripper_close():
+
+    send("O")
+
+
+# ================= FLIPPER ================= #
+
+def flipper_left():
+
+    send("P")
+
+
+def flipper_right():
+
+    send("Q")
+
+
+# ================= MAIN DRIVE LOGIC ================= #
 
 def drive(speed, turn):
-
-    """
-    speed:
-        -255 to +255
-
-    turn:
-        -255 to +255
-
-    Negative turn = left
-    Positive turn = right
-    """
 
     # Deadzone
 
@@ -132,15 +177,15 @@ def drive(speed, turn):
 
         return
 
-    # TURNING PRIORITY
+    # TURNING
 
-    if turn > 50:
+    if turn > 40:
 
         right()
 
         return
 
-    elif turn < -50:
+    elif turn < -40:
 
         left()
 
@@ -150,8 +195,8 @@ def drive(speed, turn):
 
     if speed > 0:
 
-        forward(abs(speed))
+        forward()
 
     elif speed < 0:
 
-        backward(abs(speed))
+        backward()
