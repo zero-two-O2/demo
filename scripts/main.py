@@ -441,13 +441,23 @@ def gamepad_loop():
     global manual_turn
     global controller_enabled
 
+    global last_drive_command
+    global last_horizontal_command
+    global last_vertical_command
+    global last_gripper_command
+    global last_flipper_command
+
     DEADZONE = 0.15
 
     while True:
 
         try:
 
-            if not controller_connected:
+            if not pygame.joystick.get_init():
+
+                pygame.joystick.init()
+
+            if pygame.joystick.get_count() == 0:
 
                 time.sleep(1)
 
@@ -455,12 +465,9 @@ def gamepad_loop():
 
             pygame.event.pump()
 
-            # =========================
-            # LEFT STICK - DRIVE
-            # =========================
+            # ================= DRIVE =================
 
             left_y = joystick.get_axis(1)
-
             left_x = joystick.get_axis(0)
 
             if abs(left_y) < DEADZONE:
@@ -469,12 +476,9 @@ def gamepad_loop():
             if abs(left_x) < DEADZONE:
                 left_x = 0
 
-            # =========================
-            # RIGHT STICK - ARM
-            # =========================
+            # ================= ARM =================
 
             right_x = joystick.get_axis(2)
-
             right_y = joystick.get_axis(3)
 
             if abs(right_x) < DEADZONE:
@@ -483,37 +487,24 @@ def gamepad_loop():
             if abs(right_y) < DEADZONE:
                 right_y = 0
 
-            # =========================
-            # BUTTONS
-            # =========================
+            # ================= BUTTONS =================
 
             A_BUTTON = joystick.get_button(0)
-
             B_BUTTON = joystick.get_button(1)
-
             X_BUTTON = joystick.get_button(2)
-
             Y_BUTTON = joystick.get_button(3)
 
-            # =========================
-            # D PAD
-            # =========================
+            # ================= D PAD =================
 
             hat = joystick.get_hat(0)
 
             dpad_x = hat[0]
 
-            dpad_y = hat[1]
-
-            # =========================
-            # RT TRIGGER
-            # =========================
+            # ================= RT =================
 
             rt_trigger = joystick.get_axis(5)
 
-            # =========================
-            # MODE SELECT
-            # =========================
+            # ================= MODE =================
 
             if X_BUTTON:
 
@@ -521,7 +512,7 @@ def gamepad_loop():
 
                 controller_enabled = True
 
-                log_cmd("MANUAL MODE")
+                log_cmd("MODE → MANUAL")
 
                 time.sleep(0.3)
 
@@ -531,106 +522,194 @@ def gamepad_loop():
 
                 controller_enabled = False
 
-                log_cmd("AUTO MODE")
+                log_cmd("MODE → AUTO")
 
                 time.sleep(0.3)
 
-            # =========================
-            # EMERGENCY STOP
-            # =========================
+            # ================= EMERGENCY STOP =================
 
             if rt_trigger > 0.8:
 
-                manual_speed = 0
-
-                manual_turn = 0
-
                 motor.stop()
 
-                log_cmd("EMERGENCY STOP")
+                if last_drive_command != "STOP":
 
-                time.sleep(0.2)
+                    log_cmd("EMERGENCY STOP")
+
+                last_drive_command = "STOP"
+
+                time.sleep(0.1)
 
                 continue
 
-            # =========================
-            # DRIVE CONTROL
-            # =========================
+            # ================= DRIVE CONTROL =================
 
             if (
                 read_mode() == "MANUAL"
                 and controller_enabled
             ):
 
-                manual_speed = int(-left_y * 120)
+                if left_y < -0.5:
 
-                manual_turn = int(left_x * 100)
+                    if last_drive_command != "FORWARD":
 
-            # =========================
-            # HORIZONTAL ARM
-            # =========================
+                        motor.forward()
+
+                        log_cmd("MOVE → FORWARD")
+
+                        last_drive_command = "FORWARD"
+
+                elif left_y > 0.5:
+
+                    if last_drive_command != "BACKWARD":
+
+                        motor.backward()
+
+                        log_cmd("MOVE → BACKWARD")
+
+                        last_drive_command = "BACKWARD"
+
+                elif left_x < -0.5:
+
+                    if last_drive_command != "LEFT":
+
+                        motor.left()
+
+                        log_cmd("MOVE → LEFT")
+
+                        last_drive_command = "LEFT"
+
+                elif left_x > 0.5:
+
+                    if last_drive_command != "RIGHT":
+
+                        motor.right()
+
+                        log_cmd("MOVE → RIGHT")
+
+                        last_drive_command = "RIGHT"
+
+                else:
+
+                    if last_drive_command != "STOP":
+
+                        motor.stop()
+
+                        log_cmd("MOVE → STOP")
+
+                        last_drive_command = "STOP"
+
+            # ================= HORIZONTAL ARM =================
 
             if right_x > 0.5:
 
-                motor.horizontal_forward()
+                if last_horizontal_command != "HF":
+
+                    motor.horizontal_forward()
+
+                    log_cmd("ARM → HORIZONTAL FORWARD")
+
+                    last_horizontal_command = "HF"
 
             elif right_x < -0.5:
 
-                motor.horizontal_reverse()
+                if last_horizontal_command != "HR":
+
+                    motor.horizontal_reverse()
+
+                    log_cmd("ARM → HORIZONTAL REVERSE")
+
+                    last_horizontal_command = "HR"
 
             else:
 
-                motor.horizontal_stop()
+                if last_horizontal_command != "HS":
 
-            # =========================
-            # VERTICAL ARM
-            # =========================
+                    motor.horizontal_stop()
+
+                    last_horizontal_command = "HS"
+
+            # ================= VERTICAL ARM =================
 
             if right_y < -0.5:
 
-                motor.vertical_up()
+                if last_vertical_command != "VU":
+
+                    motor.vertical_up()
+
+                    log_cmd("ARM → UP")
+
+                    last_vertical_command = "VU"
 
             elif right_y > 0.5:
 
-                motor.vertical_down()
+                if last_vertical_command != "VD":
+
+                    motor.vertical_down()
+
+                    log_cmd("ARM → DOWN")
+
+                    last_vertical_command = "VD"
 
             else:
 
-                motor.vertical_stop()
+                if last_vertical_command != "VS":
 
-            # =========================
-            # GRIPPER
-            # =========================
+                    motor.vertical_stop()
+
+                    last_vertical_command = "VS"
+
+            # ================= GRIPPER =================
 
             if dpad_x == -1:
 
-                motor.gripper_open()
+                if last_gripper_command != "OPEN":
+
+                    motor.gripper_open()
+
+                    log_cmd("GRIPPER → OPEN")
+
+                    last_gripper_command = "OPEN"
 
             elif dpad_x == 1:
 
-                motor.gripper_close()
+                if last_gripper_command != "CLOSE":
 
-            # =========================
-            # FLIPPER
-            # =========================
+                    motor.gripper_close()
+
+                    log_cmd("GRIPPER → CLOSE")
+
+                    last_gripper_command = "CLOSE"
+
+            # ================= FLIPPER =================
 
             if A_BUTTON:
 
-                motor.flipper_left()
+                if last_flipper_command != "LEFT":
+
+                    motor.flipper_left()
+
+                    log_cmd("FLIPPER → LEFT")
+
+                    last_flipper_command = "LEFT"
 
             if B_BUTTON:
 
-                motor.flipper_right()
+                if last_flipper_command != "RIGHT":
 
-            time.sleep(0.02)
+                    motor.flipper_right()
+
+                    log_cmd("FLIPPER → RIGHT")
+
+                    last_flipper_command = "RIGHT"
+
+            time.sleep(0.03)
 
         except Exception as e:
 
             print("GAMEPAD ERROR:", e)
 
             time.sleep(1)
-
-
 # ================= CLEANUP ================= #
 
 def cleanup(sig=None, frame=None):
