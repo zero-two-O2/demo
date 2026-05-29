@@ -14,19 +14,23 @@ from picamera2 import Picamera2
 from libcamera import Transform
 
 import motor_control as motor
+
 from lane_detection import detect_right_lane
+from bin_detection import detect_bin
 
 
 # ================= CONFIG ================= #
 
-MODE_FILE = "/home/zerotwo/agv_vision/mode.txt"
 
 current_speed = 120
 
 command_log = deque(maxlen=50)
 
-
-
+last_x_button = 0
+last_y_button = 0
+bin_detection_active = False
+detected_bin = None
+last_lt = False
 
 # ================= CONTROL ================= #
 
@@ -80,15 +84,14 @@ def log_cmd(msg):
 
 # ================= MODE ================= #
 
+current_mode = "MANUAL"
+
+
 def read_mode():
 
-    try:
+    global current_mode
 
-        return open(MODE_FILE).read().strip()
-
-    except:
-
-        return "MANUAL"
+    return current_mode
 
 
 def set_mode(m):
@@ -105,7 +108,17 @@ def set_mode(m):
 
     motor.stop()
 
+    if m == "AUTO":
+
+        motor.send("A")
+
+    elif m == "MANUAL":
+
+        motor.send("W")
+
     log_cmd(f"MODE → {m}")
+    
+
 
 
 # ================= GPS RECEIVER ================= #
@@ -367,8 +380,16 @@ def controller_status():
         "enabled": controller_enabled
     }
 
+
 @app.route("/pickup")
 def pickup():
+
+    global bin_detection_active
+    global detected_bin
+
+    detected_bin = None
+
+    bin_detection_active = True
 
     motor.auto_lift()
 
@@ -450,9 +471,9 @@ def gamepad_loop():
 
             B_BUTTON = joystick.get_button(1)
 
-            X_BUTTON = joystick.get_button(2)
+            X_BUTTON = joystick.get_button(3)
 
-            Y_BUTTON = joystick.get_button(3)
+            Y_BUTTON = joystick.get_button(4)
 
             # ================= D PAD =================
 
@@ -487,11 +508,16 @@ def gamepad_loop():
 
                 time.sleep(0.3)
 
-
-            if lt_trigger > 0.8:
+            lt_pressed = lt_trigger > 0.8
+            if lt_pressed and not last_lt:    
+                detected_bin = None
+                bin_detection_active = True
                 motor.auto_lift()
                 log_cmd("PICKUP SEQUENCE STARTED")
-                time.sleep(0.5)
+            last_lt = lt_pressed
+             
+                
+            
             
             # ================= EMERGENCY STOP =================
 
@@ -718,7 +744,33 @@ def vision_loop():
     while True:
 
         frame_front = picam_front.capture_array()
-
+        frame_side = picam_side.capture_array()
+        global bin_detection_active
+        global detected_bin
+        if bin_detection_active:
+            bin_color = detect_bin(frame_side)
+            if (
+            bin_color is not None
+            and detected_bin is None
+            ):
+                detected_bin = bin_color
+                log_cmd(
+                f"BIN DETECTED → {bin_color}"
+                )
+                if bin_color == "WET":
+                    motor.flipper_left()
+                    log_cmd(
+                    "FLIPPER → WET"
+                    )
+                elif bin_color == "DRY":
+                    motor.flipper_right()
+                    log_cmd(
+                    "FLIPPER → DRY"
+                    )
+                bin_detection_active = False
+                detected_bin = None
+        
+        
         if read_mode() == "AUTO":
 
             error, frame_front = detect_right_lane(
@@ -748,7 +800,24 @@ def vision_loop():
                     (0,0,255),
                     2
                 )
-
+         
+        if bin_detection_active:
+             cv2.namedWindow(
+             "AGV SIDE CAMERA",
+             cv2.WINDOW_NORMAL
+             )
+             cv2.imshow(
+             "AGV SIDE CAMERA",
+             frame_side
+             )
+        else:
+            try:
+                cv2.destroyWindow(
+                "AGV SIDE CAMERA"
+                )
+            except:
+                pass
+        
         cv2.imshow(
             "AGV FRONT CAMERA",
             frame_front
@@ -763,12 +832,12 @@ def vision_loop():
 
 if __name__ == "__main__":
 
-    gps_thread = threading.Thread(
-        target=gps_receiver,
-        daemon=True
-    )
-
-    gps_thread.start()
+#    gps_thread = threading.Thread(
+#        target=gps_receiver,
+#        daemon=True
+#    )
+#
+#    gps_thread.start()
 
     flask_thread = threading.Thread(
         target=lambda: app.run(
