@@ -8,26 +8,54 @@ def detect_right_lane(frame):
 
     h, w = frame.shape[:2]
 
-    # Bottom ROI
+    # Bottom 40% ROI only
     roi_top = int(h * 0.6)
     roi = frame[roi_top:h, :]
 
-    # Convert to HSV
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    # Blur to reduce noise
+    blur = cv2.GaussianBlur(
+        roi,
+        (5, 5),
+        0
+    )
 
-    # White color range
-    lower_white = np.array([0, 0, 180])
-    upper_white = np.array([180, 50, 255])
+    # HSV conversion
+    hsv = cv2.cvtColor(
+        blur,
+        cv2.COLOR_BGR2HSV
+    )
 
-    mask = cv2.inRange(hsv, lower_white, upper_white)
+    # More tolerant white range
+    lower_white = np.array([0, 0, 140])
+    upper_white = np.array([180, 80, 255])
 
-    # Noise removal
-    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.inRange(
+        hsv,
+        lower_white,
+        upper_white
+    )
 
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    # Morphological cleanup
+    kernel = np.ones(
+        (5, 5),
+        np.uint8
+    )
 
-    # Find contours
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        kernel
+    )
+
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
+
+    # Debug mask window
+    cv2.imshow("Lane Mask", mask)
+
     contours, _ = cv2.findContours(
         mask,
         cv2.RETR_EXTERNAL,
@@ -35,23 +63,47 @@ def detect_right_lane(frame):
     )
 
     if not contours:
+
+        cv2.putText(
+            frame,
+            "NO LANE",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 255),
+            2
+        )
+
         return None, frame
 
-    # Largest contour
-    largest = max(contours, key=cv2.contourArea)
+    largest = max(
+        contours,
+        key=cv2.contourArea
+    )
 
-    area = cv2.contourArea(largest)
+    area = cv2.contourArea(
+        largest
+    )
 
-    if area < 1500:
+    # Reject small noisy contours
+    if area < 2000:
+
+        cv2.putText(
+            frame,
+            "LANE TOO SMALL",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 255),
+            2
+        )
+
         return None, frame
 
-    # ================= DRAW FULL BLUE LANE ================= #
-
-    # Shift contour to original frame coordinates
+    # Shift contour back to full frame
     largest_global = largest.copy()
     largest_global[:, :, 1] += roi_top
 
-    # Draw detected lane contour in BLUE
     cv2.drawContours(
         frame,
         [largest_global],
@@ -60,33 +112,37 @@ def detect_right_lane(frame):
         3
     )
 
-    # ================= CENTER CALCULATION ================= #
-
-    M = cv2.moments(largest)
+    M = cv2.moments(
+        largest
+    )
 
     if M["m00"] == 0:
         return None, frame
 
-    cx = int(M["m10"] / M["m00"])
-    cy = int(M["m01"] / M["m00"])
+    cx = int(
+        M["m10"] / M["m00"]
+    )
 
-    # Convert ROI coordinates to frame coordinates
+    cy = int(
+        M["m01"] / M["m00"]
+    )
+
     cx_global = cx
     cy_global = cy + roi_top
 
-    # Reference position
-    target_x = int(w * 0.75)
+    # Follow right-side lane
+    target_x = int(
+        w * 0.75
+    )
 
-    # Draw center point
     cv2.circle(
         frame,
         (cx_global, cy_global),
-        6,
+        8,
         (0, 255, 255),
         -1
     )
 
-    # Draw target line
     cv2.line(
         frame,
         (target_x, 0),
@@ -95,7 +151,6 @@ def detect_right_lane(frame):
         2
     )
 
-    # Draw line from lane center to target
     cv2.line(
         frame,
         (cx_global, cy_global),
@@ -104,10 +159,8 @@ def detect_right_lane(frame):
         2
     )
 
-    # Steering error
     error = cx_global - target_x
 
-    # Display error value
     cv2.putText(
         frame,
         f"Error: {error}",
@@ -115,6 +168,16 @@ def detect_right_lane(frame):
         cv2.FONT_HERSHEY_SIMPLEX,
         1,
         (0, 255, 255),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        f"Area: {int(area)}",
+        (20, 80),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 0),
         2
     )
 
@@ -127,23 +190,55 @@ def detect_horizontal_marker(frame):
 
     h, w = frame.shape[:2]
 
-    # ROI for horizontal line detection
     roi_top = int(h * 0.45)
     roi_bottom = int(h * 0.65)
 
-    roi = frame[roi_top:roi_bottom, :]
+    roi = frame[
+        roi_top:roi_bottom,
+        :
+    ]
 
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    blur = cv2.GaussianBlur(
+        roi,
+        (5, 5),
+        0
+    )
 
-    lower_white = np.array([0, 0, 200])
-    upper_white = np.array([180, 50, 255])
+    hsv = cv2.cvtColor(
+        blur,
+        cv2.COLOR_BGR2HSV
+    )
 
-    mask = cv2.inRange(hsv, lower_white, upper_white)
+    lower_white = np.array([0, 0, 140])
+    upper_white = np.array([180, 80, 255])
 
-    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.inRange(
+        hsv,
+        lower_white,
+        upper_white
+    )
 
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    kernel = np.ones(
+        (5, 5),
+        np.uint8
+    )
+
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        kernel
+    )
+
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
+
+    cv2.imshow(
+        "Marker Mask",
+        mask
+    )
 
     contours, _ = cv2.findContours(
         mask,
@@ -153,23 +248,27 @@ def detect_horizontal_marker(frame):
 
     for cnt in contours:
 
-        area = cv2.contourArea(cnt)
+        area = cv2.contourArea(
+            cnt
+        )
 
-        if area < 4000:
+        if area < 3000:
             continue
 
-        x, y, cw, ch = cv2.boundingRect(cnt)
+        x, y, cw, ch = cv2.boundingRect(
+            cnt
+        )
 
         aspect_ratio = cw / float(ch)
 
-        # Horizontal strip condition
-        if aspect_ratio > 5 and cw > w * 0.6:
+        if (
+            aspect_ratio > 5
+            and cw > w * 0.55
+        ):
 
-            # Convert contour to frame coordinates
             cnt_global = cnt.copy()
             cnt_global[:, :, 1] += roi_top
 
-            # Draw detected horizontal marker in RED
             cv2.drawContours(
                 frame,
                 [cnt_global],
