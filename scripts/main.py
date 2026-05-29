@@ -14,8 +14,7 @@ from picamera2 import Picamera2
 from libcamera import Transform
 
 import motor_control as motor
-from lane_detection import detect_right_lane, detect_horizontal_marker
-from bin_detection import detect_bin
+from lane_detection import detect_right_lane
 
 
 # ================= CONFIG ================= #
@@ -26,11 +25,7 @@ current_speed = 120
 
 command_log = deque(maxlen=50)
 
-auto_state = "DRIVING"
 
-bin_request = False
-
-use_side_camera = False
 
 
 # ================= CONTROL ================= #
@@ -98,20 +93,15 @@ def read_mode():
 
 def set_mode(m):
 
-    global auto_state
-    global bin_request
-    global use_side_camera
+    global current_mode
     global controller_enabled
+    global last_drive_command
 
-    open(MODE_FILE, "w").write(m)
+    current_mode = m
 
     controller_enabled = (m == "MANUAL")
 
-    auto_state = "DRIVING"
-
-    bin_request = False
-
-    use_side_camera = False
+    last_drive_command = ""
 
     motor.stop()
 
@@ -377,47 +367,15 @@ def controller_status():
         "enabled": controller_enabled
     }
 
+@app.route("/pickup")
+def pickup():
 
-# ================= SIDE CAMERA ================= #
+    motor.auto_lift()
 
-@app.route("/side_camera/<action>")
-def side_camera_control(action):
-
-    global use_side_camera
-
-    if action == "ON":
-
-        use_side_camera = True
-
-        log_cmd("SIDE CAMERA → ON")
-
-    elif action == "OFF":
-
-        use_side_camera = False
-
-        cv2.destroyWindow("AGV SIDE CAMERA")
-
-        log_cmd("SIDE CAMERA → OFF")
+    log_cmd("PICKUP SEQUENCE STARTED")
 
     return "OK"
-
-
-# ================= BIN CONTROL ================= #
-
-@app.route("/start_bin_sequence")
-def start_bin_sequence():
-
-    global bin_request
-
-    if read_mode() == "AUTO":
-
-        bin_request = True
-
-        log_cmd("BIN SEQUENCE STARTED")
-
-    return "OK"
-
-
+    
 # ================= GPS ================= #
 
 @app.route("/gps")
@@ -505,6 +463,7 @@ def gamepad_loop():
             # ================= RT TRIGGER =================
 
             rt_trigger = joystick.get_axis(5)
+            lt_trigger = joystick.get_axis(4)
 
             # ================= MODE CONTROL =================
 
@@ -528,6 +487,12 @@ def gamepad_loop():
 
                 time.sleep(0.3)
 
+
+            if lt_trigger > 0.8:
+                motor.auto_lift()
+                log_cmd("PICKUP SEQUENCE STARTED")
+                time.sleep(0.5)
+            
             # ================= EMERGENCY STOP =================
 
             if rt_trigger > 0.8:
@@ -750,104 +715,44 @@ signal.signal(signal.SIGTERM, cleanup)
 
 def vision_loop():
 
-    global auto_state
-    global current_speed
-    global bin_request
-    global use_side_camera
-
     while True:
 
         frame_front = picam_front.capture_array()
 
-        marker, frame_front = detect_horizontal_marker(
-            frame_front
-        )
-
-        frame_side = picam_side.capture_array()
-
-        # ================= AUTO MODE ================= #
-
         if read_mode() == "AUTO":
 
-            if auto_state == "DRIVING":
+            error, frame_front = detect_right_lane(
+                frame_front
+            )
 
-                if marker or bin_request:
+            if error is not None:
 
-                    motor.stop()
+                cv2.putText(
+                    frame_front,
+                    "LANE DETECTED",
+                    (20,120),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0,255,0),
+                    2
+                )
 
-                    auto_state = "BIN_SEQUENCE"
+            else:
 
-                    use_side_camera = True
-
-                    log_cmd("ENTERING BIN SEQUENCE")
-
-                else:
-
-                    error, frame_front = detect_right_lane(
-                        frame_front
-                    )
-
-                    if error is None:
-
-                        motor.stop()
-
-                    elif error > 50:
-
-                        motor.right()
-
-                    elif error < -50:
-
-                        motor.left()
-
-                    else:
-
-                        motor.forward()
-
-            elif auto_state == "BIN_SEQUENCE":
-
-                bin_color = detect_bin(frame_side)
-
-                if bin_color:
-
-                    log_cmd(
-                        f"BIN DETECTED → {bin_color}"
-                    )
-
-                    if bin_color == "RED":
-
-                        motor.flipper_left()
-
-                    elif bin_color == "BLUE":
-
-                        motor.flipper_right()
-
-                    time.sleep(2)
-
-                    motor.stop()
-
-                    use_side_camera = False
-
-                    bin_request = False
-
-                    auto_state = "DRIVING"
-
-                    log_cmd(
-                        "BIN SEQUENCE COMPLETE"
-                    )
-
-        # ================= DISPLAY ================= #
+                cv2.putText(
+                    frame_front,
+                    "NO LANE",
+                    (20,120),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0,0,255),
+                    2
+                )
 
         cv2.imshow(
             "AGV FRONT CAMERA",
             frame_front
         )
-
-        if use_side_camera:
-
-            cv2.imshow(
-                "AGV SIDE CAMERA",
-                frame_side
-            )
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
 
