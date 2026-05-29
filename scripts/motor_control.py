@@ -1,7 +1,7 @@
 import serial
 import time
 
-SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 9600
 
 ser = None
@@ -50,7 +50,10 @@ def send(cmd):
 
         try:
 
+    
             ser.write(cmd.encode())
+            ser.flush()
+            
 
         except Exception:
 
