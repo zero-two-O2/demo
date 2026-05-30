@@ -100,7 +100,10 @@ def stop():
 def auto_lift():
 
     send("D")
+    
+def abort_lift():
 
+    send("X")
 
 # ================= HORIZONTAL ARM ================= #
 

@@ -31,6 +31,7 @@ last_y_button = 0
 bin_detection_active = False
 detected_bin = None
 last_lt = False
+last_rt = False
 
 # ================= CONTROL ================= #
 
@@ -424,6 +425,10 @@ def gamepad_loop():
     global last_vertical_command
     global last_gripper_command
     global last_flipper_command
+    global last_lt
+    global last_rt
+    global bin_detection_active
+    global detected_bin
 
     DEADZONE = 0.15
 
@@ -509,12 +514,22 @@ def gamepad_loop():
                 time.sleep(0.3)
 
             lt_pressed = lt_trigger > 0.8
-            if lt_pressed and not last_lt:    
+            if lt_pressed and not last_lt:
+                log_cmd("LT Pressed")    
                 detected_bin = None
                 bin_detection_active = True
                 motor.auto_lift()
                 log_cmd("PICKUP SEQUENCE STARTED")
             last_lt = lt_pressed
+            
+            rt_pressed = rt_trigger > 0.8
+            if rt_pressed and not last_rt:
+                motor.abort_lift()
+                bin_detection_active = False
+                detected_bin = None
+                log_cmd("PICKUP SEQUENCE ABORTED")
+            
+            last_rt = rt_pressed
              
                 
             
@@ -748,6 +763,7 @@ def vision_loop():
         global bin_detection_active
         global detected_bin
         if bin_detection_active:
+            log_cmd("SIDE CAMERA ACTIVE")
             bin_color = detect_bin(frame_side)
             if (
             bin_color is not None
