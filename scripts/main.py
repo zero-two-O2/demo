@@ -107,17 +107,18 @@ def set_mode(m):
 
     last_drive_command = ""
 
-    motor.stop()
+
 
     if m == "AUTO":
 
         motor.send("A")
-
+        log_cmd("AUTO MODE STARTED")
+        
     elif m == "MANUAL":
 
         motor.send("W")
-
-    log_cmd(f"MODE → {m}")
+        motor.stop()
+        log_cmd("MANUAL MODE")
     
 
 
