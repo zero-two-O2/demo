@@ -1,0 +1,779 @@
+#include <Servo.h>
+
+// ======================================================
+//                  LIMIT SWITCHES
+// ======================================================
+
+#define LM1 26   // Horizontal Front
+#define LM2 27   // Horizontal Back
+#define LM3 28   // Vertical BOTTOM
+#define LM4 29   // Vertical TOP
+
+// ======================================================
+//                 DRIVE L298N
+// ======================================================
+
+#define L_IN1 22
+#define L_IN2 23
+#define L_EN  5
+
+#define R_IN1 24
+#define R_IN2 25
+#define R_EN  6
+
+// ======================================================
+//                HORIZONTAL M1
+// ======================================================
+
+#define M1_IN1 30
+#define M1_IN2 31
+#define M1_EN  8
+
+// ======================================================
+//                 VERTICAL M2
+// ======================================================
+
+#define M2_IN1 32
+#define M2_IN2 33
+#define M2_EN  11
+
+// ======================================================
+//                    SERVOS
+// ======================================================
+
+#define SERVO_GRIPPER 7
+#define SERVO_FLIPPER 12
+
+// ======================================================
+//                  ULTRASONIC
+// ======================================================
+
+#define USF_TRIG 34
+#define USF_ECHO 35
+
+#define USB_TRIG 36
+#define USB_ECHO 37
+
+#define USR_TRIG 38
+#define USR_ECHO 39
+
+#define US1_TRIG 40
+#define US1_ECHO 41
+
+// ======================================================
+//                    LIGHTS & BUZZER
+// ======================================================
+
+#define BRAKE_LIGHT   42
+#define PARKING_LIGHT 43
+#define LEFT_IND      44
+#define RIGHT_IND     45
+#define BUZZER        46
+
+// ======================================================
+
+#define SAFE_DISTANCE 10
+
+Servo gripperServo;
+Servo flipperServo;
+
+// ======================================================
+//                    VARIABLES
+// ======================================================
+bool autoMode = false;
+bool autoLift        = false;
+bool waitingObstacle = false;
+bool leftBlink       = false;
+bool rightBlink      = false;
+bool parkingMode     = false;
+
+unsigned long obstacleTimer  = 0;
+unsigned long indicatorTimer = 0;
+unsigned long parkingTimer   = 0;
+
+bool indicatorState = false;
+bool parkingState   = false;
+
+int  liftStep        = 0;
+long dustbinDistance = 0;
+
+// ======================================================
+//              FUNCTION DECLARATIONS
+// ======================================================
+
+void executeCommand(char cmd);
+void handleAutoLift();
+void checkSafety();
+void handleIndicators();
+void handleParkingBlink();
+void stopIndicators();
+
+void forward();
+void backward();
+void leftTurn();
+void rightTurn();
+void stopVehicle();
+
+void horizontalForward();
+void horizontalReverse();
+void stopHorizontal();
+
+void verticalUp();
+void verticalDown();
+void stopVertical();
+
+void gripperOpen();
+void gripperClose();
+
+long readUltrasonic(int trigPin, int echoPin);
+
+// ======================================================
+//                       SETUP
+// ======================================================
+
+void setup()
+{
+  Serial.begin(9600);
+
+  // DRIVE
+  pinMode(L_IN1, OUTPUT);
+  pinMode(L_IN2, OUTPUT);
+  pinMode(L_EN,  OUTPUT);
+
+  pinMode(R_IN1, OUTPUT);
+  pinMode(R_IN2, OUTPUT);
+  pinMode(R_EN,  OUTPUT);
+
+  // HORIZONTAL
+  pinMode(M1_IN1, OUTPUT);
+  pinMode(M1_IN2, OUTPUT);
+  pinMode(M1_EN,  OUTPUT);
+
+  // VERTICAL
+  pinMode(M2_IN1, OUTPUT);
+  pinMode(M2_IN2, OUTPUT);
+  pinMode(M2_EN,  OUTPUT);
+
+  // LIMIT SWITCHES (internal pull-up — LOW = triggered)
+  pinMode(LM1, INPUT_PULLUP);
+  pinMode(LM2, INPUT_PULLUP);
+  pinMode(LM3, INPUT_PULLUP);
+  pinMode(LM4, INPUT_PULLUP);
+
+  // ULTRASONIC
+  pinMode(USF_TRIG, OUTPUT); pinMode(USF_ECHO, INPUT);
+  pinMode(USB_TRIG, OUTPUT); pinMode(USB_ECHO, INPUT);
+  pinMode(USR_TRIG, OUTPUT); pinMode(USR_ECHO, INPUT);
+  pinMode(US1_TRIG, OUTPUT); pinMode(US1_ECHO, INPUT);
+
+  // LIGHTS & BUZZER
+  pinMode(BRAKE_LIGHT,   OUTPUT);
+  pinMode(PARKING_LIGHT, OUTPUT);
+  pinMode(LEFT_IND,      OUTPUT);
+  pinMode(RIGHT_IND,     OUTPUT);
+  pinMode(BUZZER,        OUTPUT);
+
+  // SERVOS
+  gripperServo.attach(SERVO_GRIPPER);
+  flipperServo.attach(SERVO_FLIPPER);
+
+  gripperServo.write(20);   // Default open
+  flipperServo.write(90);   // Default neutral
+
+  stopVehicle();
+
+  Serial.println("[AGCV] SYSTEM READY");
+}
+
+// ======================================================
+//                        LOOP
+// ======================================================
+
+void loop()
+{
+  checkSafety();
+
+  handleIndicators();
+
+  handleParkingBlink();
+
+  handleAutoLift();
+
+  if (Serial.available())
+  {
+    char cmd = (char)Serial.read();
+    executeCommand(cmd);
+  }
+}
+
+// ======================================================
+//                  COMMAND CONTROL
+// ======================================================
+
+void executeCommand(char cmd)
+{
+  switch (cmd)
+  {
+    // --------------------------------------------------
+    // FORWARD
+    // --------------------------------------------------
+    case 'F':
+      stopIndicators();
+      parkingMode = false;
+      digitalWrite(PARKING_LIGHT, LOW);
+      digitalWrite(BUZZER, LOW);
+      forward();
+      break;
+
+    // --------------------------------------------------
+    // REVERSE
+    // --------------------------------------------------
+    case 'B':
+      stopIndicators();
+      parkingMode = true;
+      backward();
+      break;
+
+    // --------------------------------------------------
+    // LEFT TURN
+    // --------------------------------------------------
+    case 'L':
+      parkingMode = false;
+      digitalWrite(PARKING_LIGHT, LOW);
+      digitalWrite(BUZZER, LOW);
+      leftBlink  = true;
+      rightBlink = false;
+      leftTurn();
+      break;
+
+    // --------------------------------------------------
+    // RIGHT TURN
+    // --------------------------------------------------
+    case 'R':
+      parkingMode = false;
+      digitalWrite(PARKING_LIGHT, LOW);
+      digitalWrite(BUZZER, LOW);
+      rightBlink = true;
+      leftBlink  = false;
+      rightTurn();
+      break;
+
+    // --------------------------------------------------
+    // STOP
+    // --------------------------------------------------
+    case 'S':
+      stopVehicle();
+      stopIndicators();
+      parkingMode = false;
+      digitalWrite(PARKING_LIGHT, LOW);
+      digitalWrite(BUZZER, LOW);
+      break;
+
+    // --------------------------------------------------
+    // AUTO LIFT TRIGGER
+    // --------------------------------------------------
+    case 'D':
+      stopVehicle();
+      stopIndicators();
+      parkingMode = true;
+      autoLift    = true;
+      liftStep    = 0;
+      Serial.println("[LIFT] Auto-lift sequence started.");
+      break;
+
+    // --------------------------------------------------
+    // MANUAL HORIZONTAL
+    // --------------------------------------------------
+    case 'H': horizontalForward(); break;
+    case 'J': horizontalReverse(); break;
+    case 'K': stopHorizontal();    break;
+
+    // --------------------------------------------------
+    // MANUAL VERTICAL
+    // --------------------------------------------------
+    case 'U': verticalUp();    break;
+    case 'N': verticalDown();  break;
+    case 'M': stopVertical();  break;
+
+    // --------------------------------------------------
+    // GRIPPER
+    // --------------------------------------------------
+    case 'C': gripperOpen();  break;
+    case 'O': gripperClose(); break;
+
+    // --------------------------------------------------
+    // FLIPPER
+    // --------------------------------------------------
+    case 'P': flipperServo.write(110); break;
+    case 'Q': flipperServo.write(70);  break;
+
+    case 'A': autoMode = true; Serial.println("[MODE] AUTO"); break;
+     
+    case 'W': autoMode = false; Serial.println("[MODE] MANUAL"); break; 
+
+    case 'X': autoLift = false; liftStep = 0; stopHorizontal(); stopVertical(); stopVehicle(); Serial.println("[LIFT] ABORTED"); break;
+
+    // --------------------------------------------------
+    // UNKNOWN COMMAND
+    // --------------------------------------------------
+    default:
+      Serial.print("[CMD] Unknown command: ");
+      Serial.println(cmd);
+      break;
+      
+  }
+}
+
+// ======================================================
+//                  AUTO LIFT STATE MACHINE
+// ======================================================
+
+void handleAutoLift()
+{
+  if (!autoLift) return;
+
+  Serial.print("[LIFT] STEP=");
+  Serial.println(liftStep);
+
+  switch (liftStep)
+  {
+    // =====================================================
+    // STEP 0
+    // Horizontal Forward -> LM1
+    // =====================================================
+    case 0:
+    {
+      if (digitalRead(LM1) == 0)
+      {
+        horizontalForward();
+      }
+      else
+      {
+        stopHorizontal();
+
+        Serial.println("[LIFT] LM1 REACHED");
+
+        liftStep = 1;
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 1
+    // Close Gripper
+    // =====================================================
+    case 1:
+    {
+      gripperClose();
+
+      delay(1000);
+
+      Serial.println("[LIFT] GRIPPER CLOSED");
+
+      liftStep = 2;
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 2
+    // Horizontal Back -> LM2
+    // =====================================================
+    case 2:
+    {
+      if (digitalRead(LM2) == 0)
+      {
+        horizontalReverse();
+      }
+      else
+      {
+        stopHorizontal();
+
+        Serial.println("[LIFT] LM2 REACHED");
+
+        liftStep = 3;
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 3
+    // Vertical Up -> LM4
+    // =====================================================
+    case 3:
+    {
+      if (digitalRead(LM4) == 0)
+      {
+        verticalUp();
+      }
+      else
+      {
+        stopVertical();
+
+        Serial.println("[LIFT] LM4 REACHED");
+
+        liftStep = 4;
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 4
+    // Wait 2 seconds
+    // =====================================================
+    case 4:
+    {
+      Serial.println("[LIFT] WAITING 2 SEC");
+
+      delay(2000);
+
+      liftStep = 5;
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 5
+    // Vertical Down -> LM3
+    // =====================================================
+    case 5:
+    {
+      if (digitalRead(LM3) == 0)
+      {
+        verticalDown();
+      }
+      else
+      {
+        stopVertical();
+
+        Serial.println("[LIFT] LM3 REACHED");
+
+        liftStep = 6;
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 6
+    // Horizontal Forward -> LM1
+    // =====================================================
+    case 6:
+    {
+      if (digitalRead(LM1) == 0)
+      {
+        horizontalForward();
+      }
+      else
+      {
+        stopHorizontal();
+
+        Serial.println("[LIFT] DUMP POSITION");
+
+        liftStep = 7;
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 7
+    // Open Gripper
+    // =====================================================
+    case 7:
+    {
+      gripperOpen();
+
+      delay(1000);
+
+      Serial.println("[LIFT] BIN RELEASED");
+
+      liftStep = 8;
+
+      break;
+    }
+
+    // =====================================================
+    // STEP 8
+    // Horizontal Back -> LM2
+    // =====================================================
+    case 8:
+    {
+      if (digitalRead(LM2) == 0)
+      {
+        horizontalReverse();
+      }
+      else
+      {
+        stopHorizontal();
+
+        autoLift = false;
+
+        liftStep = 0;
+
+        parkingMode = false;
+
+        digitalWrite(PARKING_LIGHT, LOW);
+        digitalWrite(BUZZER, LOW);
+
+        Serial.println("[LIFT] SEQUENCE COMPLETE");
+      }
+
+      break;
+    }
+
+    // =====================================================
+    // SAFETY
+    // =====================================================
+    default:
+    {
+      stopHorizontal();
+      stopVertical();
+
+      autoLift = false;
+      liftStep = 0;
+
+      Serial.println("[LIFT ERROR] RESET");
+
+      break;
+    }
+  }
+}
+
+// ======================================================
+//                    SAFETY CHECK
+// ======================================================
+void checkSafety()
+{
+  if (!autoMode)
+      return;
+
+  if (autoLift)
+      return;
+      
+  long dFront = readUltrasonic(USF_TRIG, USF_ECHO);
+  long dBack  = readUltrasonic(USB_TRIG, USB_ECHO);
+  long dRight = readUltrasonic(USR_TRIG, USR_ECHO);
+
+  bool obstacleDetected = false;
+
+  if (dFront > 0 && dFront <= SAFE_DISTANCE)
+  {
+    Serial.println("[SAFETY] Obstacle — USF (Front)");
+    obstacleDetected = true;
+  }
+
+  if (dBack > 0 && dBack <= SAFE_DISTANCE)
+  {
+    Serial.println("[SAFETY] Obstacle — USB (Back)");
+    obstacleDetected = true;
+  }
+
+  if (dRight > 0 && dRight <= SAFE_DISTANCE)
+  {
+    Serial.println("[SAFETY] Obstacle — USR (Right)");
+    obstacleDetected = true;
+  }
+
+  if (obstacleDetected && !waitingObstacle)
+  {
+    stopVehicle();
+    digitalWrite(BRAKE_LIGHT, HIGH);
+    digitalWrite(BUZZER, HIGH);
+    waitingObstacle = true;
+    obstacleTimer   = millis();
+  }
+
+  // Auto-resume after 5 seconds
+  if (waitingObstacle && (millis() - obstacleTimer >= 5000))
+  {
+    digitalWrite(BRAKE_LIGHT, LOW);
+    digitalWrite(BUZZER, LOW);
+    waitingObstacle = false;
+    forward();
+    Serial.println("[SAFETY] Path clear. Resuming forward.");
+  }
+}
+
+// ======================================================
+//                    DRIVE CONTROL
+// ======================================================
+
+void forward()
+{
+  analogWrite(L_EN, 180);
+  analogWrite(R_EN, 180);
+  digitalWrite(L_IN1, HIGH); digitalWrite(L_IN2, LOW);
+  digitalWrite(R_IN1, HIGH); digitalWrite(R_IN2, LOW);
+}
+
+void backward()
+{
+  analogWrite(L_EN, 180);
+  analogWrite(R_EN, 180);
+  digitalWrite(L_IN1, LOW); digitalWrite(L_IN2, HIGH);
+  digitalWrite(R_IN1, LOW); digitalWrite(R_IN2, HIGH);
+}
+
+void leftTurn()
+{
+  analogWrite(L_EN, 180);
+  analogWrite(R_EN, 180);
+  digitalWrite(L_IN1, LOW);  digitalWrite(L_IN2, HIGH);
+  digitalWrite(R_IN1, HIGH); digitalWrite(R_IN2, LOW);
+}
+
+void rightTurn()
+{
+  analogWrite(L_EN, 180);
+  analogWrite(R_EN, 180);
+  digitalWrite(L_IN1, HIGH); digitalWrite(L_IN2, LOW);
+  digitalWrite(R_IN1, LOW);  digitalWrite(R_IN2, HIGH);
+}
+
+void stopVehicle()
+{
+  analogWrite(L_EN, 0);
+  analogWrite(R_EN, 0);
+  digitalWrite(L_IN1, LOW); digitalWrite(L_IN2, LOW);
+  digitalWrite(R_IN1, LOW); digitalWrite(R_IN2, LOW);
+}
+
+// ======================================================
+//                 HORIZONTAL CONTROL
+// ======================================================
+
+void horizontalForward()
+{
+  digitalWrite(M1_IN1, HIGH);
+  digitalWrite(M1_IN2, LOW);
+  analogWrite(M1_EN, 220);
+}
+
+void horizontalReverse()
+{
+  digitalWrite(M1_IN1, LOW);
+  digitalWrite(M1_IN2, HIGH);
+  analogWrite(M1_EN, 220);
+}
+
+void stopHorizontal()
+{
+  analogWrite(M1_EN, 0);
+  digitalWrite(M1_IN1, LOW);
+  digitalWrite(M1_IN2, LOW);
+}
+
+// ======================================================
+//                  VERTICAL CONTROL
+// ======================================================
+
+void verticalUp()
+{
+  digitalWrite(M2_IN1, HIGH);
+  digitalWrite(M2_IN2, LOW);
+  analogWrite(M2_EN, 180);
+}
+
+void verticalDown()
+{
+  digitalWrite(M2_IN1, LOW);
+  digitalWrite(M2_IN2, HIGH);
+  analogWrite(M2_EN, 180);
+}
+
+void stopVertical()
+{
+  analogWrite(M2_EN, 0);
+  digitalWrite(M2_IN1, LOW);
+  digitalWrite(M2_IN2, LOW);
+}
+
+// ======================================================
+//                     GRIPPER
+// ======================================================
+
+void gripperOpen()
+{
+  gripperServo.write(150);
+}
+
+void gripperClose()
+{
+  gripperServo.write(100);
+}
+
+// ======================================================
+//                    INDICATORS
+// ======================================================
+
+void handleIndicators()
+{
+  if (!leftBlink && !rightBlink)
+  {
+    digitalWrite(LEFT_IND, LOW);
+    digitalWrite(RIGHT_IND, LOW);
+    return;
+  }
+
+  if (millis() - indicatorTimer >= 400)
+  {
+    indicatorTimer = millis();
+    indicatorState = !indicatorState;
+
+    if (leftBlink)  digitalWrite(LEFT_IND,  indicatorState);
+    if (rightBlink) digitalWrite(RIGHT_IND, indicatorState);
+  }
+}
+
+void stopIndicators()
+{
+  leftBlink  = false;
+  rightBlink = false;
+  digitalWrite(LEFT_IND,  LOW);
+  digitalWrite(RIGHT_IND, LOW);
+}
+
+// ======================================================
+//             PARKING LIGHT + BUZZER BLINK
+// ======================================================
+
+void handleParkingBlink()
+{
+  if (!parkingMode)
+  {
+    digitalWrite(PARKING_LIGHT, LOW);
+    digitalWrite(BUZZER, LOW);
+    return;
+  }
+
+  if (millis() - parkingTimer >= 500)
+  {
+    parkingTimer = millis();
+    parkingState = !parkingState;
+    digitalWrite(PARKING_LIGHT, parkingState);
+    digitalWrite(BUZZER,        parkingState);
+  }
+}
+
+// ======================================================
+//                   ULTRASONIC SENSOR
+// ======================================================
+
+long readUltrasonic(int trigPin, int echoPin)
+{
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+
+  if (duration == 0) return 999;   // Timeout = no obstacle
+
+  return duration * 0.034 / 2;    // Convert to cm
+}
